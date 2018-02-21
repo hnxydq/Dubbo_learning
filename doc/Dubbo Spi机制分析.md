@@ -53,7 +53,6 @@ public class StartCommand implements Command {
         System.out.println("start command.");
     }
 }
-
 ```
 
 ShutdownCommand.java
@@ -92,4 +91,388 @@ public class Main {
     }
 }
 ```
+
+### 六、结合Dubbo源码分析Spi
+
+如前所说，Dubbo SPI的目的是获取一个指定实现类的对象。那么Dubbo是通过什么方式获取的呢？其实是调用ExtensionLoader.getExtension(String name)实现。
+
+具体实现途径有三种：
+
+①getExtensionLoader(Class<T> type)    为type接口new一个ExtensionLoader，然后缓存起来。
+
+②getAdaptiveExtension()   获取一个扩展装饰类的对象，这个类有一个规则，如果它没有@Adaptive注解，就动态创建一个装饰类，例如Protocol$Adaptive对象。
+
+③getExtension(String name)    获取一个指定对象。
+
+（1）分析ExtensionLoader.getExtensionLoader(Class<T> type)
+
+Dubbo的第一行代码在哪里？
+
+idea导入Dubbo源码，在子模块dubbo-demo-provider/src/test下有DemoProvider.java
+
+```java
+package com.alibaba.dubbo.demo.provider;
+
+public class DemoProvider {
+
+    public static void main(String[] args) {
+        com.alibaba.dubbo.container.Main.main(args);
+    }
+}
+```
+
+这里便是代码的入口。
+
+这里调到com.alibaba.dubbo.container.Main.java
+
+```java
+package com.alibaba.dubbo.container;
+
+import com.alibaba.dubbo.common.Constants;
+import com.alibaba.dubbo.common.extension.ExtensionLoader;
+import com.alibaba.dubbo.common.logger.Logger;
+import com.alibaba.dubbo.common.logger.LoggerFactory;
+import com.alibaba.dubbo.common.utils.ConfigUtils;
+
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.List;
+
+/**
+ * Main. (API, Static, ThreadSafe)
+ *
+ * @author william.liangf
+ */
+public class Main {
+
+    public static final String CONTAINER_KEY = "dubbo.container";
+
+    public static final String SHUTDOWN_HOOK_KEY = "dubbo.shutdown.hook";
+
+    private static final Logger logger = LoggerFactory.getLogger(Main.class);
+
+    private static final ExtensionLoader<Container> loader = ExtensionLoader.getExtensionLoader(Container.class);
+
+    private static volatile boolean running = true;
+
+    public static void main(String[] args) {
+        try {
+            if (args == null || args.length == 0) {
+                String config = ConfigUtils.getProperty(CONTAINER_KEY, loader.getDefaultExtensionName());
+                args = Constants.COMMA_SPLIT_PATTERN.split(config);
+            }
+
+            final List<Container> containers = new ArrayList<Container>();
+            for (int i = 0; i < args.length; i++) {
+                containers.add(loader.getExtension(args[i]));
+            }
+            logger.info("Use container type(" + Arrays.toString(args) + ") to run dubbo serivce.");
+
+            if ("true".equals(System.getProperty(SHUTDOWN_HOOK_KEY))) {
+                Runtime.getRuntime().addShutdownHook(new Thread() {
+                    public void run() {
+                        for (Container container : containers) {
+                            try {
+                                container.stop();
+                                logger.info("Dubbo " + container.getClass().getSimpleName() + " stopped!");
+                            } catch (Throwable t) {
+                                logger.error(t.getMessage(), t);
+                            }
+                            synchronized (Main.class) {
+                                running = false;
+                                Main.class.notify();
+                            }
+                        }
+                    }
+                });
+            }
+
+            for (Container container : containers) {
+                container.start();
+                logger.info("Dubbo " + container.getClass().getSimpleName() + " started!");
+            }
+            System.out.println(new SimpleDateFormat("[yyyy-MM-dd HH:mm:ss]").format(new Date()) + " Dubbo service server started!");
+        } catch (RuntimeException e) {
+            e.printStackTrace();
+            logger.error(e.getMessage(), e);
+            System.exit(1);
+        }
+        synchronized (Main.class) {
+            while (running) {
+                try {
+                    Main.class.wait();
+                } catch (Throwable e) {
+                }
+            }
+        }
+    }
+
+}
+```
+
+可以看到，Main类中定义了一系列的静态成员变量，其中：
+
+```java
+private static final ExtensionLoader<Container> loader = ExtensionLoader.getExtensionLoader(Container.class);
+```
+
+在Main类初始化阶段调用了上述第①条方式为Container创建扩展点。
+
+通过断点跟进getExtensionLoader方法，会进行new ExtensionLoader<T>(type)构造：
+
+```java
+private ExtensionLoader(Class<?> type) {
+        this.type = type;
+        objectFactory = (type == ExtensionFactory.class ? null : ExtensionLoader.getExtensionLoader(ExtensionFactory.class).getAdaptiveExtension());
+    }
+```
+
+可以看到，这里会进一步调用getExtensionLoader方法，只是这次传入的是ExtensionFactory.class。通过上面的代码知道，等价于如下：
+
+```java
+this.type = type;
+objectFactory = null;
+```
+
+执行以上代码完成了2个属性的初始化：
+1.每个ExtensionLoader都包含了2个值： type 和 objectFactory
+  Class<?> type；//构造器初始化时要得到的接口名
+  ExtensionFactory objectFactory//构造器初始化时设置为AdaptiveExtensionFactory，Dubbo内部默认的实现是SpiExtensionFactory和SpringExtensionFactory。这里使用的是SpiExtensionFactory。
+
+实际上AdaptiveExtensionFactory这里为SpiExtensionFactory。另外，还有一个SpringExtensionFactory。
+
+2.new 一个ExtensionLoader 存储在ConcurrentMap<Class<?>, ExtensionLoader<?>> EXTENSION_LOADERS里。
+
+[关于objectFactory]:
+1.objectFactory就是ExtensionFactory，它也是通过ExtensionLoader.getExtensionLoader(ExtensionFactory.class)来实现的，但是它的objectFactory=null
+2.objectFactory作用，它就是为dubbo的IOC提供所有对象。
+
+（2）分析getAdaptiveExtension()
+
+为什么要设计Adaptive？
+
+Adaptive注解在类和方法上有什么区别？
+
+①注解在类上，代表人工实现编码，即实现了一个装饰类，如ExtensionFactory。
+
+②注解在方法上，代表自动生成和编译一个动态的adaptive类，如Protocol$Adaptive。
+
+接下来从子模块dubbo-config-spring下的schema包的DubboNamespaceHandler开始分析：
+
+```java
+package com.alibaba.dubbo.config.spring.schema;
+
+import com.alibaba.dubbo.common.Version;
+import com.alibaba.dubbo.config.ApplicationConfig;
+import com.alibaba.dubbo.config.ConsumerConfig;
+import com.alibaba.dubbo.config.ModuleConfig;
+import com.alibaba.dubbo.config.MonitorConfig;
+import com.alibaba.dubbo.config.ProtocolConfig;
+import com.alibaba.dubbo.config.ProviderConfig;
+import com.alibaba.dubbo.config.RegistryConfig;
+import com.alibaba.dubbo.config.spring.AnnotationBean;
+import com.alibaba.dubbo.config.spring.ReferenceBean;
+import com.alibaba.dubbo.config.spring.ServiceBean;
+
+import org.springframework.beans.factory.xml.NamespaceHandlerSupport;
+
+/**
+ * DubboNamespaceHandler
+ *
+ * @author william.liangf
+ * @export
+ */
+public class DubboNamespaceHandler extends NamespaceHandlerSupport {
+
+    static {
+        Version.checkDuplicate(DubboNamespaceHandler.class);
+    }
+
+    public void init() {
+        registerBeanDefinitionParser("application", new DubboBeanDefinitionParser(ApplicationConfig.class, true));
+        registerBeanDefinitionParser("module", new DubboBeanDefinitionParser(ModuleConfig.class, true));
+        registerBeanDefinitionParser("registry", new DubboBeanDefinitionParser(RegistryConfig.class, true));
+        registerBeanDefinitionParser("monitor", new DubboBeanDefinitionParser(MonitorConfig.class, true));
+        registerBeanDefinitionParser("provider", new DubboBeanDefinitionParser(ProviderConfig.class, true));
+        registerBeanDefinitionParser("consumer", new DubboBeanDefinitionParser(ConsumerConfig.class, true));
+        registerBeanDefinitionParser("protocol", new DubboBeanDefinitionParser(ProtocolConfig.class, true));
+        registerBeanDefinitionParser("service", new DubboBeanDefinitionParser(ServiceBean.class, true));
+        registerBeanDefinitionParser("reference", new DubboBeanDefinitionParser(ReferenceBean.class, false));
+        registerBeanDefinitionParser("annotation", new DubboBeanDefinitionParser(AnnotationBean.class, true));
+    }
+}
+```
+
+先来看
+
+```java
+registerBeanDefinitionParser("service", new DubboBeanDefinitionParser(ServiceBean.class, true));
+```
+
+这里ServiceBean继承自ServiceConfig类。
+
+```java
+public class ServiceConfig<T> extends AbstractServiceConfig {
+
+    private static final long serialVersionUID = 3033787999037024738L;
+
+    private static final Protocol protocol = ExtensionLoader.getExtensionLoader(Protocol.class).getAdaptiveExtension();
+
+    private static final ProxyFactory proxyFactory = ExtensionLoader.getExtensionLoader(ProxyFactory.class).getAdaptiveExtension();
+....
+}
+```
+
+在这里通过getAdaptiveExtension()获取protocol。
+
+```java
+-->getAdaptiveExtension()//为cachedAdaptiveInstance赋值
+  -->createAdaptiveExtension()
+    -->getAdaptiveExtensionClass()
+      -->getExtensionClasses()//为cachedClasses 赋值
+        -->loadExtensionClasses()
+          -->loadFile(..)
+      -->createAdaptiveExtensionClass()//自动生成和编译一个动态的adpative类，这个类是一个代理类
+        -->ExtensionLoader.getExtensionLoader(com.alibaba.dubbo.common.compiler.Compiler.class)
+    .getAdaptiveExtension()
+        -->compiler.compile(code, classLoader)
+    -->injectExtension()//作用：进入IOC的反转控制模式，实现了动态注入
+```
+
+关于loadFile(..)方法的一些细节：
+
+作用：把配置文件META-INF/dubbo/internal/com.alibaba.dubbo.rpc.Protocol的内容，存储在缓存变量里。
+
+①cachedAdaptiveClass 如果这个Class含有adaptive注解就赋值，如ExtensionFactory，但是Protocol没有。
+
+②cachedWrapperClasses 只有当该class无adaptive注解，并且构造方法包含目标接口(type)类型，如Protocol里的SPI就只有ProtocolFilterWrapper和ProtocolListenerWrapper能命中。
+
+③cachedActivates 剩下的包含Activate注解的类
+
+④cachedName  剩下的类存储在该map中
+
+上面执行compile时，框架会自动生成如下Protocol$Adpative类代码:
+
+```java
+package com.alibaba.dubbo.rpc;
+
+import com.alibaba.dubbo.common.extension.ExtensionLoader;
+
+public class Protocol$Adpative implements com.alibaba.dubbo.rpc.Protocol {
+	public void destroy() {
+		throw new UnsupportedOperationException(
+				"method public abstract void com.alibaba.dubbo.rpc.Protocol.destroy() of interface com.alibaba.dubbo.rpc.Protocol is not adaptive method!");
+	}
+
+	public int getDefaultPort() {
+		throw new UnsupportedOperationException(
+				"method public abstract int com.alibaba.dubbo.rpc.Protocol.getDefaultPort() of interface com.alibaba.dubbo.rpc.Protocol is not adaptive method!");
+	}
+
+	public com.alibaba.dubbo.rpc.Exporter export(
+			com.alibaba.dubbo.rpc.Invoker arg0)
+			throws com.alibaba.dubbo.rpc.RpcException {
+		if (arg0 == null)
+			throw new IllegalArgumentException(
+					"com.alibaba.dubbo.rpc.Invoker argument == null");
+		if (arg0.getUrl() == null)
+			throw new IllegalArgumentException(
+					"com.alibaba.dubbo.rpc.Invoker argument getUrl() == null");
+		com.alibaba.dubbo.common.URL url = arg0.getUrl();
+		String extName = (url.getProtocol() == null ? "dubbo" : url
+				.getProtocol());
+		if (extName == null)
+			throw new IllegalStateException(
+					"Fail to get extension(com.alibaba.dubbo.rpc.Protocol) name from url("
+							+ url.toString() + ") use keys([protocol])");
+		com.alibaba.dubbo.rpc.Protocol extension = (com.alibaba.dubbo.rpc.Protocol) ExtensionLoader
+				.getExtensionLoader(com.alibaba.dubbo.rpc.Protocol.class)
+				.getExtension(extName);
+		return extension.export(arg0);//自己执行自己，说明当前类是一个代理类
+	}
+
+	public com.alibaba.dubbo.rpc.Invoker refer(java.lang.Class arg0,
+			com.alibaba.dubbo.common.URL arg1)
+			throws com.alibaba.dubbo.rpc.RpcException {
+		if (arg1 == null)
+			throw new IllegalArgumentException("url == null");
+		com.alibaba.dubbo.common.URL url = arg1;
+		String extName = (url.getProtocol() == null ? "dubbo" : url
+				.getProtocol());
+		if (extName == null)
+			throw new IllegalStateException(
+					"Fail to get extension(com.alibaba.dubbo.rpc.Protocol) name from url("
+							+ url.toString() + ") use keys([protocol])");
+		com.alibaba.dubbo.rpc.Protocol extension = (com.alibaba.dubbo.rpc.Protocol) ExtensionLoader
+				.getExtensionLoader(com.alibaba.dubbo.rpc.Protocol.class)
+				.getExtension(extName);
+		return extension.refer(arg0, arg1);//自己执行自己，说明当前类是一个代理类
+	}
+}
+```
+
+其实就是模板：
+
+```java
+package <扩展点接口所在包>;
+ 
+public class <扩展点接口名>$Adpative implements <扩展点接口> {
+    public <有@Adaptive注解的接口方法>(<方法参数>) {
+        if(是否有URL类型方法参数?) 使用该URL参数
+        else if(是否有方法类型上有URL属性) 使用该URL属性
+        # <else 在加载扩展点生成自适应扩展点类时抛异常，即加载扩展点失败！>
+         
+        if(获取的URL == null) {
+            throw new IllegalArgumentException("url == null");
+        }
+ 
+              根据@Adaptive注解上声明的Key的顺序，从URL获致Value，作为实际扩展点名。
+               如URL没有Value，则使用缺省扩展点实现。如没有扩展点， throw new IllegalStateException("Fail to get extension");
+ 
+               在扩展点实现调用该方法，并返回结果。
+    }
+ 
+    public <有@Adaptive注解的接口方法>(<方法参数>) {
+        throw new UnsupportedOperationException("is not adaptive method!");
+    }
+}
+```
+
+Dubbo的所有对象都是通过ExtensionLoader获取的，SPI是内核。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
