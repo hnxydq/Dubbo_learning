@@ -237,8 +237,11 @@ objectFactory = null;
 ```
 
 执行以上代码完成了2个属性的初始化：
+
 1.每个ExtensionLoader都包含了2个值： type 和 objectFactory
+
   Class<?> type；//构造器初始化时要得到的接口名
+
   ExtensionFactory objectFactory//构造器初始化时设置为AdaptiveExtensionFactory，Dubbo内部默认的实现是SpiExtensionFactory和SpringExtensionFactory。这里使用的是SpiExtensionFactory。
 
 实际上AdaptiveExtensionFactory这里为SpiExtensionFactory。另外，还有一个SpringExtensionFactory。
@@ -246,7 +249,9 @@ objectFactory = null;
 2.new 一个ExtensionLoader 存储在ConcurrentMap<Class<?>, ExtensionLoader<?>> EXTENSION_LOADERS里。
 
 **关于objectFactory**
+
 1.objectFactory就是ExtensionFactory，它也是通过ExtensionLoader.getExtensionLoader(ExtensionFactory.class)来实现的，但是它的objectFactory=null
+
 2.objectFactory作用，它就是为dubbo的IOC提供所有对象。
 
 （2）分析getAdaptiveExtension()
