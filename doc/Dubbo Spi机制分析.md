@@ -330,28 +330,88 @@ public class ServiceConfig<T> extends AbstractServiceConfig {
 ```java
 -->getAdaptiveExtension()//为cachedAdaptiveInstance赋值
   -->createAdaptiveExtension()
-    -->getAdaptiveExtensionClass()
+    -->getAdaptiveExtensionClass()//该方法看出，如果是预定义的类就直接返回，不然动态生成适配类
       -->getExtensionClasses()//为cachedClasses 赋值
         -->loadExtensionClasses()
           -->loadFile(..)
       -->createAdaptiveExtensionClass()//自动生成和编译一个动态的adpative类，这个类是一个代理类
-        -->ExtensionLoader.getExtensionLoader(com.alibaba.dubbo.common.compiler.Compiler.class)
-    .getAdaptiveExtension()
+        -->ExtensionLoader.getExtensionLoader
+                  (com.alibaba.dubbo.common.compiler.Compiler.class).getAdaptiveExtension()
         -->compiler.compile(code, classLoader)
     -->injectExtension()//作用：进入IOC的反转控制模式，实现了动态注入
 ```
 
-关于loadFile(..)方法的一些细节：
+**loadFile(..)方法的作用**：把SPI配置文件（如META-INF/dubbo/internal/com.alibaba.dubbo.rpc.Protocol）的内容，存储在缓存变量里。使用了四个缓存变量。
 
-作用：把配置文件META-INF/dubbo/internal/com.alibaba.dubbo.rpc.Protocol的内容，存储在缓存变量里。
+①缓存包含Adaptive注解的类
 
-①cachedAdaptiveClass 如果这个Class含有adaptive注解就赋值，如ExtensionFactory，但是Protocol没有。
+cachedAdaptiveClass 如果这个Class含有adaptive注解就赋值进去，如ExtensionFactory有，而Protocol没有。
 
-②cachedWrapperClasses 只有当该class无adaptive注解，并且构造方法包含目标接口(type)类型，如Protocol里的SPI就只有ProtocolFilterWrapper和ProtocolListenerWrapper能命中。
+②缓存无Adaptive注解的封装类
+
+cachedWrapperClasses 只有当该class无adaptive注解，并且构造方法参数为目标接口(type，如Protocol)类型，如Protocol里的SPI就只有ProtocolFilterWrapper和ProtocolListenerWrapper能命中，如下例：
+
+```java
+public class ProtocolFilterWrapper implements Protocol {
+
+    private final Protocol protocol;
+
+    public ProtocolFilterWrapper(Protocol protocol) {
+        if (protocol == null) {
+            throw new IllegalArgumentException("protocol == null");
+        }
+        this.protocol = protocol;
+    }
+  。。。
+}
+```
 
 ③cachedActivates 剩下的包含Activate注解的类
 
 ④cachedName  剩下的类存储在该map中
+
+在loadExtensionClasses()方法中，有三处loadFile()加载SPI文件：
+
+```java
+private Map<String, Class<?>> loadExtensionClasses() {
+        final SPI defaultAnnotation = type.getAnnotation(SPI.class);
+        if (defaultAnnotation != null) {
+            String value = defaultAnnotation.value();
+            if (value != null && (value = value.trim()).length() > 0) {
+                String[] names = NAME_SEPARATOR.split(value);
+                if (names.length > 1) {
+                    throw new IllegalStateException("more than 1 default extension name on extension " + type.getName()
+                            + ": " + Arrays.toString(names));
+                }
+                if (names.length == 1) cachedDefaultName = names[0];
+            }
+        }
+
+        Map<String, Class<?>> extensionClasses = new HashMap<String, Class<?>>();
+        loadFile(extensionClasses, DUBBO_INTERNAL_DIRECTORY);
+        loadFile(extensionClasses, DUBBO_DIRECTORY);
+        loadFile(extensionClasses, SERVICES_DIRECTORY);
+        return extensionClasses;
+    }
+```
+
+这里的三处loadFile()实际上起到真正作用的是第一个：路径为META-INF/dubbo/internal/，这个打开dubbo.jar即可看到，这里仍然看com.alibaba.dubbo.rpc.Protocol这个SPI文件：
+
+```java
+registry=com.alibaba.dubbo.registry.integration.RegistryProtocol
+dubbo=com.alibaba.dubbo.rpc.protocol.dubbo.DubboProtocol
+filter=com.alibaba.dubbo.rpc.protocol.ProtocolFilterWrapper
+listener=com.alibaba.dubbo.rpc.protocol.ProtocolListenerWrapper
+mock=com.alibaba.dubbo.rpc.support.MockProtocol
+injvm=com.alibaba.dubbo.rpc.protocol.injvm.InjvmProtocol
+rmi=com.alibaba.dubbo.rpc.protocol.rmi.RmiProtocol
+hessian=com.alibaba.dubbo.rpc.protocol.hessian.HessianProtocol
+com.alibaba.dubbo.rpc.protocol.http.HttpProtocol
+com.alibaba.dubbo.rpc.protocol.webservice.WebServiceProtocol
+thrift=com.alibaba.dubbo.rpc.protocol.thrift.ThriftProtocol
+memcached=com.alibaba.dubbo.rpc.protocol.memcached.MemcachedProtocol
+redis=com.alibaba.dubbo.rpc.protocol.redis.RedisProtocol
+```
 
 上面执行compile时，框架会自动生成如下Protocol$Adpative类代码:
 
@@ -413,7 +473,7 @@ public class Protocol$Adpative implements com.alibaba.dubbo.rpc.Protocol {
 }
 ```
 
-其实就是模板：
+其实就是根据如下模板生成的：
 
 ```java
 package <扩展点接口所在包>;
@@ -440,7 +500,9 @@ public class <扩展点接口名>$Adpative implements <扩展点接口> {
 }
 ```
 
-Dubbo的所有对象都是通过ExtensionLoader获取的，SPI是内核。
+总结起来，Dubbo的所有对象都是通过ExtensionLoader获取的，SPI是内核。
+
+为了进一步分析代理类的扩展类对象生成过成，将Protocol$Adpative类手动创建到dubbo源码子模块dubbo-demo下的dubbo-demo-provider中，test目录下新建包com.alibaba.dubbo.rpc。然后将上述代码拷贝其中。
 
 
 
