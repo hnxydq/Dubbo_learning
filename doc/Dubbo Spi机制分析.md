@@ -245,7 +245,7 @@ objectFactory = null;
 
 2.new 一个ExtensionLoader 存储在ConcurrentMap<Class<?>, ExtensionLoader<?>> EXTENSION_LOADERS里。
 
-[关于objectFactory]:
+**关于objectFactory**
 1.objectFactory就是ExtensionFactory，它也是通过ExtensionLoader.getExtensionLoader(ExtensionFactory.class)来实现的，但是它的objectFactory=null
 2.objectFactory作用，它就是为dubbo的IOC提供所有对象。
 
