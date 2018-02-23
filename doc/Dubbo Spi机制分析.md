@@ -242,9 +242,7 @@ objectFactory = null;
 
   Class<?> type；//构造器初始化时要得到的接口名
 
-  ExtensionFactory objectFactory//构造器初始化时设置为AdaptiveExtensionFactory，Dubbo内部默认的实现是SpiExtensionFactory和SpringExtensionFactory。这里使用的是SpiExtensionFactory。
-
-实际上AdaptiveExtensionFactory这里为SpiExtensionFactory。另外，还有一个SpringExtensionFactory。
+  ExtensionFactory objectFactory//构造器初始化时设置为AdaptiveExtensionFactory，Dubbo内部默认的实现是SpiExtensionFactory和SpringExtensionFactory。
 
 2.new 一个ExtensionLoader 存储在ConcurrentMap<Class<?>, ExtensionLoader<?>> EXTENSION_LOADERS里。
 
@@ -507,7 +505,33 @@ public class <扩展点接口名>$Adpative implements <扩展点接口> {
 
 总结起来，Dubbo的所有对象都是通过ExtensionLoader获取的，SPI是内核。
 
-为了进一步分析代理类的扩展类对象生成过成，将Protocol$Adpative类手动创建到dubbo源码子模块dubbo-demo下的dubbo-demo-provider中，test目录下新建包com.alibaba.dubbo.rpc。然后将上述代码拷贝其中。
+（3）分析getExtension(String name)
+
+为了进一步分析代理类的扩展类对象生成过程，将Protocol$Adpative类手动创建到dubbo源码子模块dubbo-demo下的dubbo-demo-provider中，test目录下新建包com.alibaba.dubbo.rpc。然后将上述代码拷贝其中。
+
+然后在getExtension(extName)这里设置断点：
+
+![get_extension](/img/get_extension_1.PNG)
+
+通过断点跟踪，调用链如下：
+
+```java
+-->getExtension(String name) //指定对象缓存在cachedInstances；get出来的对象可能是wrapper对象，例如protocol就是ProtocolFilterWrapper和ProtocolListenerWrapper其中一个。
+  -->createExtension(String name)
+    -->getExtensionClasses() //前面已经分析过，就是使用loadFile读取文件并缓存
+    -->injectExtension(T instance)//dubbo的IOC反转控制，就是从spi和spring里面提取对象赋值。
+      -->objectFactory.getExtension(pt, property)//通过ExtensionFactory获取extension，有两种
+        -->①SpiExtensionFactory.getExtension(type, name)
+          -->ExtensionLoader.getExtensionLoader(type)
+          -->loader.getAdaptiveExtension()
+        -->②SpringExtensionFactory.getExtension(type, name)
+          -->context.getBean(name)
+    -->injectExtension((T) wrapperClass.getConstructor(type).newInstance(instance))//AOP的简单设计，这个地方如果前面的wrapperClasses缓存不空，那么就会执行这句代码，如Protocol中只有Filter和Listener，通过使用ProtocolFilterWrapper或ProtocolListenerWrapper的构造方法反射然后注入
+```
+
+通过上述分析，总结起来SPI getExtension()的执行流程及设计模式如下：
+
+![getextension_2](img/getextension_2.PNG)
 
 
 
