@@ -511,7 +511,7 @@ public class <扩展点接口名>$Adpative implements <扩展点接口> {
 
 然后在getExtension(extName)这里设置断点：
 
-![get_extension](/img/get_extension_1.PNG)
+![get_extension](img/get_extension_1.PNG)
 
 通过断点跟踪，调用链如下：
 
