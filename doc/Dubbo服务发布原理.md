@@ -96,6 +96,48 @@ public void onApplicationEvent(ApplicationEvent event) {
 }
 ```
 
+执行调用流程：
+
+``` java
+ServiceBean.onApplicationEvent
+-->export()
+  -->ServiceConfig.export()
+    -->doExport()
+      -->doExportUrls()//里面有一个for循环，代表了一个服务可以有多个通信协议，例如 tcp协议 http协议，默认是tcp协议
+        -->loadRegistries(true)//从dubbo.properties里面组装registry的url信息
+        -->doExportUrlsFor1Protocol(ProtocolConfig protocolConfig, List<URL> registryURLs) 
+          //配置不是remote的情况下做本地暴露 (配置为remote，则表示只暴露远程服务)
+          -->exportLocal(URL url)
+            -->proxyFactory.getInvoker(ref, (Class) interfaceClass, local)
+              -->ExtensionLoader.getExtensionLoader(com.alibaba.dubbo.rpc.ProxyFactory.class).getExtension("javassist");
+              -->extension.getInvoker(arg0, arg1, arg2)
+                -->StubProxyFactoryWrapper.getInvoker(T proxy, Class<T> type, URL url) 
+                  -->proxyFactory.getInvoker(proxy, type, url)
+                    -->JavassistProxyFactory.getInvoker(T proxy, Class<T> type, URL url)
+                      -->Wrapper.getWrapper(com.alibaba.dubbo.demo.provider.DemoServiceImpl)
+                        -->makeWrapper(Class<?> c)
+                      -->return new AbstractProxyInvoker<T>(proxy, type, url)
+            -->protocol.export
+              -->Protocol$Adpative.export
+                -->ExtensionLoader.getExtensionLoader(com.alibaba.dubbo.rpc.Protocol.class).getExtension("injvm");
+				-->extension.export(arg0) //即ProtocolListenerWrapper.export(invoker)
+					-->exporter = protocol.export(invoker)
+						-->ProtocolFilterWrapper.export(Invoker<T> invoker)
+							-->buildInvokerChain  //创建8个filter
+							-->InjvmProtocol.export
+								-->new InjvmExporter<T>(invoker, invoker.getUrl().getServiceKey(), exporterMap);
+					-->return new ListenerExporterWrapper<T>(exporter, Collections.unmodifiableList(ExtensionLoader.getExtensionLoader(ExporterListener.class)
+                        .getActivateExtension(invoker.getUrl(), Constants.EXPORTER_LISTENER_KEY)));
+
+
+```
+
+
+
+
+
+
+
 
 
 
