@@ -243,7 +243,7 @@ Invocation是包含了需要执行的方法和参数等重要信息，目前它�
 	                                                      -->AbstractPeer //this.url = url;    this.handler = handler;
 	                                                      -->AbstractEndpoint//codec  timeout=1000  connectTimeout=3000
 	                                                      -->AbstractServer //bindAddress accepts=0 idleTimeout=600000
-                                                          -->doOpen()  //---------------4.打开断开，暴露netty服务
+                                                          -->doOpen()  //---------------4.打开连接，暴露netty服务
 	                                                        -->设置 NioServerSocketChannelFactory boss worker的线程池 线程个数为3
 	                                                        -->设置编解码 hander
 	                                                        -->bootstrap.bind(getBindAddress())
