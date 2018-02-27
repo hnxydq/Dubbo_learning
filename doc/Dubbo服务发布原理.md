@@ -32,8 +32,6 @@ dubbo.registry.address=zookeeper://127.0.0.1:2181
 6.监听zookeeper
 ```
 
-### 暴露本地服务
-
 暴露的服务，其实就是dubbo-demo-provider.xml中配置的service：
 
 ```xml
@@ -96,7 +94,7 @@ public void onApplicationEvent(ApplicationEvent event) {
 }
 ```
 
-执行调用流程：
+执行调用分析如下：
 
 ``` java
 ServiceBean.onApplicationEvent
@@ -104,10 +102,21 @@ ServiceBean.onApplicationEvent
   -->ServiceConfig.export()
     -->doExport()
       -->doExportUrls()//里面有一个for循环，代表了一个服务可以有多个通信协议，例如 tcp协议 http协议，默认是tcp协议
-        -->loadRegistries(true)//从dubbo.properties里面组装registry的url信息
+        -->loadRegistries(true)//从dubbo.properties里面组装registry的url信息：registry://127.0.0.1:2181/com.alibaba.dubbo.registry.RegistryService?application=demo-provider&dubbo=2.0.0&owner=william&pid=2752&registry=zookeeper&timestamp=1519438717974
         -->doExportUrlsFor1Protocol(ProtocolConfig protocolConfig, List<URL> registryURLs) 
-          //配置不是remote的情况下做本地暴露 (配置为remote，则表示只暴露远程服务)
-          -->exportLocal(URL url)
+```
+
+这里分为本地暴露和远程暴露。那么暴露本地服务和暴露远程服务的区别是什么？
+
+1.暴露本地服务：指暴露在用一个JVM里面，不用通过调用zk来进行远程通信。例如：在同一个服务，自己调用自己的接口，就没必要进行网络IP连接来通信。
+
+2.暴露远程服务：指暴露给远程客户端的IP和端口号，通过网络来实现通信。
+
+### 本地暴露
+
+```java
+//配置不是remote的情况下做本地暴露 (配置为remote，则表示只暴露远程服务)
+          -->exportLocal(URL url) //本地暴露
             -->proxyFactory.getInvoker(ref, (Class) interfaceClass, local)
               -->ExtensionLoader.getExtensionLoader(com.alibaba.dubbo.rpc.ProxyFactory.class).getExtension("javassist");
               -->extension.getInvoker(arg0, arg1, arg2)
@@ -117,20 +126,149 @@ ServiceBean.onApplicationEvent
                       -->Wrapper.getWrapper(com.alibaba.dubbo.demo.provider.DemoServiceImpl)
                         -->makeWrapper(Class<?> c)
                       -->return new AbstractProxyInvoker<T>(proxy, type, url)
-            -->protocol.export
-              -->Protocol$Adpative.export
+            -->protocol.export(Invoker<T> invoker)
+              -->Protocol$Adpative.export(Invoker<T> invoker)
                 -->ExtensionLoader.getExtensionLoader(com.alibaba.dubbo.rpc.Protocol.class).getExtension("injvm");
-				-->extension.export(arg0) //即ProtocolListenerWrapper.export(invoker)
-					-->exporter = protocol.export(invoker)
-						-->ProtocolFilterWrapper.export(Invoker<T> invoker)
-							-->buildInvokerChain  //创建8个filter
-							-->InjvmProtocol.export
-								-->new InjvmExporter<T>(invoker, invoker.getUrl().getServiceKey(), exporterMap);
-					-->return new ListenerExporterWrapper<T>(exporter, Collections.unmodifiableList(ExtensionLoader.getExtensionLoader(ExporterListener.class)
-                        .getActivateExtension(invoker.getUrl(), Constants.EXPORTER_LISTENER_KEY)));
-
-
+                -->extension.export(arg0) //extension为ProtocolFilterWrapper
+                  -->ProtocolFilterWrapper.export(Invoker<T> invoker)
+                    -->ProtocolFilterWrapper.buildInvokerChain(final Invoker<T> invoker, String key, String group) //创建8个filter
+                    -->ProtocolListenerWrapper.export(Invoker<T> invoker)
+                      -->InjvmProtocol.export(Invoker<T> invoker)
+                        -->return new InjvmExporter<T>(invoker, invoker.getUrl().getServiceKey(), exporterMap)
+							-->exporterMap.put(key, this)//key=com.alibaba.dubbo.demo.DemoService, this=InjvmExporter //这里也是上面整个代码的目的，为了把要暴露的对象存储在exporterMap里
 ```
+
+（1）这里的proxyFactory是什么？
+
+```java
+@SPI("javassist")
+public interface ProxyFactory {
+    /**
+     * create proxy.
+     *
+     * @param invoker
+     * @return proxy
+     */
+    @Adaptive({Constants.PROXY_KEY})
+    <T> T getProxy(Invoker<T> invoker) throws RpcException;
+
+    /**
+     * create invoker.
+     *
+     * @param <T>
+     * @param proxy
+     * @param type
+     * @param url
+     * @return invoker
+     */
+    @Adaptive({Constants.PROXY_KEY})
+    <T> Invoker<T> getInvoker(T proxy, Class<T> type, URL url) throws RpcException;
+}
+```
+
+可以看出proxyFactory是一个代理，作用是获取一个接口的代理类，例如获取一个远程接口的代理。
+
+ getInvoker：针对server端，将服务对象，如DemoServiceImpl包装成一个Invoker对象。
+
+ getProxy：针对client端，创建接口的代理对象，例如DemoService的接口。
+
+（2）上面还出现了Wrapper，这个又是做什么的？
+
+它类似spring的BeanWrapper，它就是包装了一个接口或一个类，可以通过wrapper对实例对象进行赋值、取值以及指定方法的调用。
+
+（3）Invoker
+
+Invoker：它是一个可执行的对象，能够根据方法的名称、参数得到相应的执行结果。
+
+```java
+它里面有一个很重要的方法 Result invoke(Invocation invocation)，
+Invocation是包含了需要执行的方法和参数等重要信息，目前它只有2个实现类RpcInvocation MockInvocation
+它有3种类型的Invoker
+	1.本地执行类的Invoker
+		server端：要执行 demoService.sayHello，就通过InjvmExporter来进行反射执行demoService.sayHello就可以了。
+		
+	2.远程通信类的Invoker
+		client端：要执行 demoService.sayHello，它封装了DubboInvoker进行远程通信，发送要执行的接口给server端。
+		server端：采用了AbstractProxyInvoker执行了DemoServiceImpl.sayHello,然后将执行结果返回发送给client.
+		
+	3.多个远程通信执行类的Invoker聚合成集群版的Invoker
+		client端：要执行 demoService.sayHello，就要通过AbstractClusterInvoker来进行负载均衡，DubboInvoker进行远程通信，发送要执行的接口给server端。
+		server端：采用了AbstractProxyInvoker执行了DemoServiceImpl.sayHello,然后将执行结果返回发送给client.
+```
+### 远程暴露
+
+远程暴露过程中使用Netty进行通信。接着前面分析：
+
+```java
+//如果配置不是local则暴露为远程服务.(配置为local，则表示只暴露本地服务)
+          -->proxyFactory.getInvoker//原理和本地暴露一样都是为了获取一个Invoker对象
+          -->protocol.export(invoker) //invoker: "registry://127.0.0.1:2181/com.alibaba.dubbo.registry.RegistryService?application=demo-provider&dubbo=2.0.0&export=dubbo%3A%2F%2F10.168.18.162%3A20880%2Fcom.alibaba.dubbo.demo.DemoService%3Fanyhost%3Dtrue%26application%3Ddemo-provider%26dubbo%3D2.0.0%26generic%3Dfalse%26interface%3Dcom.alibaba.dubbo.demo.DemoService%26loadbalance%3Droundrobin%26methods%3DsayHello%26owner%3Dwilliam%26pid%3D6948%26side%3Dprovider%26timestamp%3D1519691944112&owner=william&pid=6948&registry=zookeeper&timestamp=1519691944048"
+            -->Protocol$Adpative.export(invoker)
+              -->ExtensionLoader.getExtensionLoader(com.alibaba.dubbo.rpc.Protocol.class).getExtension("registry");
+	            -->extension.export(arg0)
+	              -->ProtocolFilterWrapper.export(Invoker<T> invoker)
+	                -->ProtocolListenerWrapper.export(Invoker<T> invoker)
+	                  -->RegistryProtocol.export(final Invoker<T> originInvoker)
+	                    -->doLocalExport(final Invoker<T> originInvoker)
+	                      -->getCacheKey(originInvoker);//读取 dubbo://192.168.100.51:20880/
+	                      -->protocol.export(invokerDelegete)
+	                        -->Protocol$Adpative.export(com.alibaba.dubbo.rpc.Invoker arg0)
+	                          -->ExtensionLoader.getExtensionLoader(com.alibaba.dubbo.rpc.Protocol.class).getExtension("dubbo");
+	                          -->extension.export(arg0)
+	                            -->ProtocolFilterWrapper.export(Invoker<T> invoker)
+	                              -->buildInvokerChain(invoker, Constants.SERVICE_FILTER_KEY, Constants.PROVIDER)//创建8个filter
+	                              -->ProtocolListenerWrapper.export(Invoker<T> invoker)
+                                    -->DubboProtocol.export(Invoker<T> invoker)
+	                                  -->serviceKey(url)//组装key=com.alibaba.dubbo.demo.DemoService:20880
+	                                  -->目的：exporterMap.put(key, exporter); //key=com.alibaba.dubbo.demo.DemoService:20880, exporter=DubboExporter
+	                                  -->openServer(url)
+	                                    -->createServer(url)
+                                          -->Exchangers.bind(url, requestHandler)//exchanger是一个信息交换层
+	                                        -->getExchanger(url)
+	                                          -->getExchanger(type)
+	                                            -->ExtensionLoader.getExtensionLoader(Exchanger.class).getExtension("header")
+	                                        -->HeaderExchanger.bind(URL url, ExchangeHandler handler)
+	                                          -->Transporters.bind(url, new DecodeHandler(new HeaderExchangeHandler(handler)))
+	                                            -->new HeaderExchangeHandler(handler)//this.handler = handler
+	                                            -->new DecodeHandler
+	                                            	-->new AbstractChannelHandlerDelegate//this.handler = handler;
+                                                -->Transporters.bind(URL url, ChannelHandler... handlers)
+	                                              -->getTransporter()
+	                                                -->ExtensionLoader.getExtensionLoader(Transporter.class).getAdaptiveExtension()
+	                                              -->Transporter$Adpative.bind
+	                                                -->ExtensionLoader.getExtensionLoader(com.alibaba.dubbo.remoting.Transporter.class).getExtension("netty");
+	                                                -->extension.bind(arg0, arg1)
+	                                                  -->NettyTransporter.bind(URL url, ChannelHandler listener)
+	                                                    --new NettyServer(url, listener)
+	                                                      -->AbstractPeer //this.url = url;    this.handler = handler;
+	                                                      -->AbstractEndpoint//codec  timeout=1000  connectTimeout=3000
+	                                                      -->AbstractServer //bindAddress accepts=0 idleTimeout=600000
+                                                          -->doOpen()
+	                                                        -->设置 NioServerSocketChannelFactory boss worker的线程池 线程个数为3
+	                                                        -->设置编解码 hander
+	                                                        -->bootstrap.bind(getBindAddress())
+	                                          -->new HeaderExchangeServer
+	                                            -->this.server=NettyServer
+	                                            -->heartbeat=60000
+	                                            -->heartbeatTimeout=180000
+	                                            -->startHeatbeatTimer()//这是一个心跳定时器，采用了线程池，如果断开就心跳重连。
+```
+
+①Protocol
+  1.export：暴露远程服务（用于服务端），就是将proxyFactory.getInvoker创建的代理类 invoker对象，通过协议暴露给外部。
+  2.refer：引用远程服务（用于客户端）， 通过proxyFactory.getProxy来创建远程的动态代理类，例如DemoService的远程动态接口。
+
+②exporter：维护invoker的生命周期。
+
+③exchanger：信息交换层，封装请求响应模式，同步转异步。
+
+④transporter：网络传输层，用来抽象netty和mina的统一接口。
+
+
+
+
+
+
 
 
 
