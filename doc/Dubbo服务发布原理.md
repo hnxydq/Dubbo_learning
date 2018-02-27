@@ -210,7 +210,7 @@ Invocation是包含了需要执行的方法和参数等重要信息，目前它�
 	                -->ProtocolListenerWrapper.export(Invoker<T> invoker)
 	                  -->RegistryProtocol.export(final Invoker<T> originInvoker)
 	                    -->doLocalExport(final Invoker<T> originInvoker)
-	                      -->getCacheKey(originInvoker);//读取 dubbo://192.168.100.51:20880/
+	                      -->getCacheKey(originInvoker);//读取 dubbo://127.0.0.1:20880/
 	                      -->protocol.export(invokerDelegete)
 	                        -->Protocol$Adpative.export(com.alibaba.dubbo.rpc.Invoker arg0)
 	                          -->ExtensionLoader.getExtensionLoader(com.alibaba.dubbo.rpc.Protocol.class).getExtension("dubbo");
