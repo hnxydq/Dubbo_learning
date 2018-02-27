@@ -255,7 +255,9 @@ Invocation是包含了需要执行的方法和参数等重要信息，目前它�
 ```
 
 ①Protocol
+
 1.export：暴露远程服务（用于服务端），就是将proxyFactory.getInvoker创建的代理类 invoker对象，通过协议暴露给外部。
+
 2.refer：引用远程服务（用于客户端）， 通过proxyFactory.getProxy来创建远程的动态代理类，例如DemoService的远程动态接口。
 
 ②exporter：维护invoker的生命周期。
