@@ -218,12 +218,12 @@ Invocation是包含了需要执行的方法和参数等重要信息，目前它�
 	                            -->ProtocolFilterWrapper.export(Invoker<T> invoker)
 	                              -->buildInvokerChain(invoker, Constants.SERVICE_FILTER_KEY, Constants.PROVIDER)//创建8个filter
 	                              -->ProtocolListenerWrapper.export(Invoker<T> invoker)
-                                    -->DubboProtocol.export(Invoker<T> invoker)
+                                    -->DubboProtocol.export(Invoker<T> invoker)  //------------1.netty服务暴露的开始
 	                                  -->serviceKey(url)//组装key=com.alibaba.dubbo.demo.DemoService:20880
 	                                  -->目的：exporterMap.put(key, exporter); //key=com.alibaba.dubbo.demo.DemoService:20880, exporter=DubboExporter
 	                                  -->openServer(url)
 	                                    -->createServer(url)
-                                          -->Exchangers.bind(url, requestHandler)//exchanger是一个信息交换层
+                                          -->Exchangers.bind(url, requestHandler)//------------2.信息交换层exchanger开始
 	                                        -->getExchanger(url)
 	                                          -->getExchanger(type)
 	                                            -->ExtensionLoader.getExtensionLoader(Exchanger.class).getExtension("header")
@@ -232,7 +232,7 @@ Invocation是包含了需要执行的方法和参数等重要信息，目前它�
 	                                            -->new HeaderExchangeHandler(handler)//this.handler = handler
 	                                            -->new DecodeHandler
 	                                            	-->new AbstractChannelHandlerDelegate//this.handler = handler;
-                                                -->Transporters.bind(URL url, ChannelHandler... handlers)
+                                                -->Transporters.bind(URL url, ChannelHandler... handlers)//----3.网络传输层 transporter
 	                                              -->getTransporter()
 	                                                -->ExtensionLoader.getExtensionLoader(Transporter.class).getAdaptiveExtension()
 	                                              -->Transporter$Adpative.bind
@@ -243,7 +243,7 @@ Invocation是包含了需要执行的方法和参数等重要信息，目前它�
 	                                                      -->AbstractPeer //this.url = url;    this.handler = handler;
 	                                                      -->AbstractEndpoint//codec  timeout=1000  connectTimeout=3000
 	                                                      -->AbstractServer //bindAddress accepts=0 idleTimeout=600000
-                                                          -->doOpen()
+                                                          -->doOpen()  //---------------4.打开断开，暴露netty服务
 	                                                        -->设置 NioServerSocketChannelFactory boss worker的线程池 线程个数为3
 	                                                        -->设置编解码 hander
 	                                                        -->bootstrap.bind(getBindAddress())
