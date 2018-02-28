@@ -322,8 +322,45 @@ zk持久化节点和临时节点有什么区别？
 
 ③dubbo如何订阅zookeeper信息？
 
+```java
+	                    -->registry.subscribe(overrideSubscribeUrl, overrideSubscribeListener);//订阅ZK
+	                      -->AbstractRegistry.subscribe
+	                      -->FailbackRegistry.subscribe
+	                        -->doSubscribe(url, listener)// 向服务器端发送订阅请求
+	                          -->ZookeeperRegistry.doSubscribe(final URL url, final NotifyListener listener)
+	                            -->new ChildListener() {
+									-->实现childChanged(String parentPath, List<String> currentChilds)
+										-->实现并执行ZookeeperRegistry.this.notify(url, listener, toUrlsWithEmpty(url, parentPath, currentChilds));
+	                              //A
+	                            -->zkClient.create(path, false);//第一步：先创建持久化节点/dubbo/com.alibaba.dubbo.demo.DemoService/configurators
+	                            -->zkClient.addChildListener(path, zkListener)
+	                              -->AbstractZookeeperClient.addChildListener(path, listener)
+	                                //C
+	                                -->createTargetChildListener(path, listener)//第三步：收到订阅后的处理，交给FailbackRegistry.notify处理
+	                                  -->ZkclientZookeeperClient.createTargetChildListener(String path, final ChildListener listener)
+	                                    -->new IZkChildListener() 
+	                                      -->实现了 handleChildChange //收到订阅后的处理
+	                                      	-->listener.childChanged(parentPath, currentChilds);
+	                                      	-->实现并执行ZookeeperRegistry.this.notify(url, listener, toUrlsWithEmpty(url, parentPath, currentChilds));
+	                                      	-->收到订阅后处理 FailbackRegistry.notify
+	                                //B      	
+	                                -->addTargetChildListener(path, targetListener)////第二步
+	                                  -->ZkclientZookeeperClient.addTargetChildListener
+	                                    -->client.subscribeChildChanges(path, listener)//第二步：启动加入订阅/dubbo/com.alibaba.dubbo.demo.DemoService/configurators
 ```
 
+最后再跟一下notify的处理流程：
+
+```java
+	                    -->notify(url, listener, urls)
+	                      -->FailbackRegistry.notify
+	                        -->doNotify(url, listener, urls);
+	                          -->AbstractRegistry.notify
+	                            -->saveProperties(url);//把服务端的注册url信息更新到C:\Users\qiangdong\.dubbo\dubbo-registry-192.168.48.117.cache
+	                              -->registryCacheExecutor.execute(new SaveProperties(version));//采用线程池来处理
+	                            -->listener.notify(categoryList)
+	                              -->RegistryProtocol.notify
+	                                -->RegistryProtocol.this.getProviderUrl(originInvoker)//通过invoker的url 获取 providerUrl的地址
 ```
 
 
