@@ -267,6 +267,86 @@ Invocation是包含了需要执行的方法和参数等重要信息，目前它�
 ④transporter：网络传输层，用来抽象netty和mina的统一接口。
 
 
+**接着前面Netty分析之后，来分析Dubbo中的Zookeeper使用机制。**
+
+关注如下三个问题：
+
+①dubbo如何连接zookeeper？
+
+```java
+	                    -->getRegistry(originInvoker)//连接zookeeper
+	                      -->registryFactory.getRegistry(registryUrl)
+	                        -->ExtensionLoader.getExtensionLoader(RegistryFactory.class).getExtension("zookeeper");
+	                        -->extension.getRegistry(arg0)
+	                          -->AbstractRegistryFactory.getRegistry//创建一个注册中心，存储在REGISTRIES
+	                            -->createRegistry(url)
+	                              -->new ZookeeperRegistry(url, zookeeperTransporter)
+	                                -->AbstractRegistry(URL url)
+	                                  -->loadProperties()//目的：把C:\Users\qiangdong\.dubbo\dubbo-registry-127.0.0.1.cache 文件中的内容加载为properties
+	                                  -->notify(url.getBackupUrls())//不做任何事             
+	                                -->FailbackRegistry   
+	                                  -->retryExecutor.scheduleWithFixedDelay(new Runnable()//建立线程池，检测并连接注册中心,如果失败了就重连
+	                                -->ZookeeperRegistry
+	                                  -->zookeeperTransporter.connect(url)
+	                                    -->ZookeeperTransporter$Adpative.connect(url)
+	                                      -->ExtensionLoader.getExtensionLoader(ZookeeperTransporter.class).getExtension("zkclient");
+	                                      -->extension.connect(arg0)
+	                                        -->ZkclientZookeeperTransporter.connect(URL url)
+	                                          -->new ZkclientZookeeperClient(url)
+	                                            -->调用super: AbstractZookeeperClient(URL url)
+												-->new ZkClient(url.getBackupAddress());//连接ZK
+	                                            -->client.subscribeStateChanges(new IZkStateListener()//订阅的目的：连接断开时重连
+	                                  -->zkClient.addStateListener(new StateListener() 
+	                                    -->recover //连接失败时重连
+```
+
+②dubbo如何创建zookeeper节点？
+
+```java
+	                    -->registry.register(registedProviderUrl)//创建节点
+	                      -->AbstractRegistry.register
+	                      -->FailbackRegistry.register
+	                        -->doRegister(url)//向zk服务器端发送注册请求
+	                          -->ZookeeperRegistry.doRegister(URL url)
+	                            -->zkClient.create(toUrlPath(url), url.getParameter(Constants.DYNAMIC_KEY, true))
+	                              -->AbstractZookeeperClient.create///dubbo/com.alibaba.dubbo.demo.DemoService/providers/dubbo%3A%2F%2F10.168.18.162%3A20880%2Fcom.alibaba.dubbo.demo.DemoService%3Fanyhost%3Dtrue%26application%3Ddemo-provider%26dubbo%3D2.0.0%26generic%3Dfalse%26interface%3Dcom.alibaba.dubbo.demo.DemoService%26loadbalance%3Droundrobin%26methods%3DsayHello%26owner%3Dwilliam%26pid%3D7832%26side%3Dprovider%26timestamp%3D1519804577146
+	                                -->createEphemeral(path);//临时节点  dubbo%3A%2F%2F10.168.18.162%3A20880%2F.............
+	                                -->createPersistent(path);//持久化节点 dubbo/com.alibaba.dubbo.demo.DemoService/providers
+```
+
+zk持久化节点和临时节点有什么区别？
+
+持久化节点：一旦被创建，除非主动删除掉，否则就一直存储在zk里面。
+
+临时节点：与客户端会话绑定，一旦客户端会话失效，这个客户端端所创建的所有临时节点都会被删除。Dubbo对注册的服务使用临时节点，保证服务断掉时节点自动被移除，以免订阅者一直订阅。
+
+③dubbo如何订阅zookeeper信息？
+
+```
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
