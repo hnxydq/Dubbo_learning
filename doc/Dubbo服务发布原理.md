@@ -329,8 +329,8 @@ zk持久化节点和临时节点有什么区别？
 	                        -->doSubscribe(url, listener)// 向服务器端发送订阅请求
 	                          -->ZookeeperRegistry.doSubscribe(final URL url, final NotifyListener listener)
 	                            -->new ChildListener() {
-									-->实现childChanged(String parentPath, List<String> currentChilds)
-										-->实现并执行ZookeeperRegistry.this.notify(url, listener, toUrlsWithEmpty(url, parentPath, currentChilds));
+					-->实现childChanged(String parentPath, List<String> currentChilds)
+					   -->实现并执行ZookeeperRegistry.this.notify(url, listener, toUrlsWithEmpty(url, parentPath, currentChilds));
 	                              //A
 	                            -->zkClient.create(path, false);//第一步：先创建持久化节点/dubbo/com.alibaba.dubbo.demo.DemoService/configurators
 	                            -->zkClient.addChildListener(path, zkListener)
