@@ -363,7 +363,9 @@ zk持久化节点和临时节点有什么区别？
 	                                -->RegistryProtocol.this.getProviderUrl(originInvoker)//通过invoker的url 获取 providerUrl的地址
 ```
 
+整个服务发布流程如下：
 
+![export](img/export.PNG)
 
 
 
