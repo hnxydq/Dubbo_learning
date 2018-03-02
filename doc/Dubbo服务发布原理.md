@@ -1,6 +1,6 @@
 ## Dubbo服务发布原理
 
-修改dubbo-demo子项目的dubbo-demo-provider模块的dubbo-demo-provider.xml中注册中心的配置：
+修改dubbo-demo子项目的dubbo-demo-provider模块的main/resources/dubbo-demo-provider.xml中注册中心的配置：
 
 ```xml
 <!-- 使用multicast广播注册中心暴露服务地址 -->
@@ -8,7 +8,7 @@
 <dubbo:registry protocol="zookeeper" address="127.0.0.1:2181"/>
 ```
 
-同时修改dubbo-config子项目的dubbo-config-spring模块的test/resources/dubbo.properties文件中：
+同时修改dubbo-demo子项目的dubbo-demo-provider模块的test/resources/dubbo.properties文件中：
 
 ```properties
 #dubbo.registry.address=multicast://224.5.6.7:1234
