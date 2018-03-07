@@ -17,7 +17,9 @@ dubbo-demo项目的dubbo-demo-consumer/src/main/resources/META-INF/spring/dubbo-
 <dubbo:registry protocol="zookeeper" address="127.0.0.1:2181"/>
 ```
 
-使用两个Idea，分别跑producer和consumer。
+使用两个Idea，分别跑producer和consumer。其中consumer用来断点跟踪。
+
+
 
 
 
