@@ -61,3 +61,7 @@ demoService.sayHello("world" + i)
               -->Result result = invoker.invoke(invocation)
 ```
 
+集群容错的基本流程：
+
+![cluster_invoker](img/cluster_invoker.png)
+
