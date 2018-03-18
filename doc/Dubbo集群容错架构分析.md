@@ -65,3 +65,11 @@ demoService.sayHello("world" + i)
 
 ![cluster_invoker](img/cluster_invoker.png)
 
+### Directory目录服务
+
+包含StaticDirectory和RegistryDirectory。
+
+其中StaticDirectory是静态的，Invoker是固定的；RegistryDirectory是注册目录服务，它的Invoker集合来自于ZK，实现了NotifyListener接口，实现了void notify(List<URL> urls);方法，整个过程维护了一个重要变量methodInvokerMap，该map是数据的来源，同时也是notify的重要操作对象，重点是写操作。（通过doList来完成读操作，通过notify完成写操作。）
+
+
+
