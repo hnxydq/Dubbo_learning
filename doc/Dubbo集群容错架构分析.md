@@ -87,28 +87,23 @@ demoService.sayHello("world" + i)
 
 ### Cluster
 
+```
 FailoverCluster：（默认）失败转移，当出现失败，重试其它服务器，通常用于读操作，但重试会带来更长延迟。
-
 FailfastCluster：快速失败，只发起一次调用，失败立即报错，通常用于非幂等性的写操作。
-
 FailbackCluster：失败自动恢复，后台记录失败请求，定时重发，通常用于消息通知操作。
-
 FailsafeCluster：失败安全，出现异常时，直接忽略，通常用于写入审计日志等操作。
-
 ForkingCluster：并行调用，只要一个成功即返回，通常用于实时性要求较高的操作，但需要浪费更多服务资源。
-
 BroadcastCluster: 广播调用。遍历所有Invokers,逐个调用每个调用catch住异常不影响其他invoker调用
-
 MergeableCluster: 分组聚合，按组合并返回结果，比如菜单服务，接口一样，但有多种实现，用group区分，现在消费方需从每种group中调用一次返回结果，合并结果返回，这样就可以实现聚合菜单项。
-
 AvailableCluster:获取可用的调用。遍历所有Invokers判断Invoker.isAvalible,只要一个有为true直接调用返回，不管成不成功。
+```
 
 ### LoadBalance
 
+```
 RandomLoadBalance：随机，按权重设置随机概率。在一个截面上碰撞的概率高，但调用量越大分布越均匀，而且按概率使用权重后也比较均匀，有利于动态调整提供者权重。
-
 RoundRobinLoadBalance：轮循，按公约后的权重设置轮循比率。存在慢的提供者累积请求问题，比如：第二台机器很慢，但没挂，当请求调到第二台时就卡在那，久而久之，所有请求都卡在调到第二台上。
-
 LeastActiveLoadBalance：最少活跃调用数，相同活跃数的随机，活跃数指调用前后计数差。使慢的提供者收到更少请求，因为越慢的提供者的调用前后计数差会越大。
-
 ConsistentHashLoadBalance：一致性Hash，相同参数的请求总是发到同一提供者。当某一台提供者挂时，原本发往该提供者的请求，基于虚拟节点，平摊到其它提供者，不会引起剧烈变动。
+```
+
