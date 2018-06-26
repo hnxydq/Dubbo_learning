@@ -107,3 +107,26 @@ LeastActiveLoadBalance：最少活跃调用数，相同活跃数的随机，活�
 ConsistentHashLoadBalance：一致性Hash，相同参数的请求总是发到同一提供者。当某一台提供者挂时，原本发往该提供者的请求，基于虚拟节点，平摊到其它提供者，不会引起剧烈变动。
 ```
 
+接着前面的调用流程继续分析，FailoverClusterInvoker#doInvoke(Invocation invocation, final List<Invoker<T>> invokers, LoadBalance loadbalance)：
+
+```java
+              -->Result result = invoker.invoke(invocation)
+                -->InvokerWrapper.invoke(Invocation invocation)
+                  -->ProtocolFilterWrapper.buildInvokerChain() #invoke()
+                  	--> ConsumerContextFilter.invoke()
+                  	  -->ProtocolFilterWrapper.buildInvokerChain() #invoke()
+                     	-->MonitorFilter.invoke
+                     	  -->ProtocolFilterWrapper.buildInvokerChain() #invoke()
+                  		    -->FutureFilter.invoke
+                  		      -->ListenerInvokerWrapper.invoke
+                  		        -->AbstractInvoker.invoke
+                  		          -->doInvoke(invocation)
+                  				   -->DubboInvoker.doInvoke
+                  				     -->ReferenceCountExchangeClient.sendRequest
+                  				       -->HeaderExchangeClient.request
+                  				         -->HeaderExchangeChannel.request
+                  				           -->AbstractPeer.send(Object message)
+                    						-->NettyChannel.send
+                    						  -->ChannelFuture future = channel.writeAndFlush(message);//通过netty的channel发送网络数据
+```
+
