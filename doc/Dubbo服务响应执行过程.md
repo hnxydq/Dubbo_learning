@@ -1,10 +1,10 @@
 ## Dubbo服务响应执行过程
 
-###Dubbo总体设计流程
+### Dubbo总体设计流程
 
-![provider-response](img\provider-response.PNG)
+![](img\provider-response.PNG)
 
-###Provider的响应流程：
+### Provider的响应流程：
 
 ```java
 NettyHandler.messageReceived
@@ -41,7 +41,7 @@ NettyHandler.messageReceived
                       -->ChannelFuture future = channel.write(message);//数据发回consumer
 ```
 
-###Consumer接收响应流程：
+### Consumer接收响应流程：
 
 ```java
 NettyHandler.messageReceived
