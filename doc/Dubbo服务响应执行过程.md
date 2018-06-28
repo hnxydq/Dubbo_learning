@@ -2,7 +2,7 @@
 
 ###Dubbo总体设计流程
 
-![provider-response](img\provider-response.PNG)
+![provider-response](img/provider-response.PNG)
 
 ###Provider的响应流程：
 
